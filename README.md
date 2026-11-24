@@ -1,4 +1,4 @@
-# Exploit Blackbird on A8 Devices and Achieve Untethered Downgrade with Blobs
+# Exploit Blackbird on A8 Devices and Achieve Tethered/Untethered Downgrade with Blobs
 
 **WARNING: THIS IS ONLY A PROOF OF CONCEPT. IF YOU BUILD AND RUN THE PAYLOAD ON YOUR DEVICE, YOU'RE AWARE OF THE RISK OF PERMANENT LOSS OF YOUR DATA AND PERMANENT BOOTLOOP OF YOUR DEVICE! USE AT YOUR OWN RISK!**
 
@@ -6,8 +6,37 @@ However, I've tried to restore to iOS 11.4 from iOS 15.8.8 on my iPad mini 4 Wi-
 
 And, everything before overwriting ART should be read only and won't compromise your data and device.
 
-## Part I Exploit SEP and Obtain ART Key
-1. Put your device in DFU mode, and use palera1n or checkra1n to start [this](https://github.com/feiyehua/atera1n-PongoOS) PongoOS image. You can build yourself, or use the image build by Github Action.
+## Supported Devices
+
+All A8 (T7000) devices with checkm8 support:
+
+| Device | Identifier | Board | SoC | Baseband | Notes |
+|--------|-----------|-------|-----|----------|-------|
+| iPad mini 4 (Wi-Fi) | iPad5,1 | j96ap | A8 (T7000) | No | Tested and confirmed working |
+| iPad mini 4 (Cellular) | iPad5,2 | j97ap | A8 (T7000) | Yes | Needs futurerestore for baseband |
+| iPhone 6 | iPhone7,2 | n61ap | A8 (T7000) | Yes | Needs futurerestore for baseband |
+| iPod touch (6th gen) | iPod7,1 | n102ap | A8 (T7000) | No | No baseband, similar to iPad mini 4 Wi-Fi |
+
+### Untethered vs Blobless
+
+This project supports two modes:
+
+- **Untethered** (Part I + II + III below): Modify ART permanently so the device boots the downgraded firmware on its own. Requires saved SHSH blobs. Riskier, but the device can boot independently after restore.
+- **Blobless** (see [Blobless Boot Guide](#blobless-boot-guide) below): No SHSH blobs needed. Uses Blackbird to patch SEPOS manifest validation in-memory on every boot via the `sep blobless` PongoOS command. Requires a computer for every boot (tethered), but ART is never modified. Recommended for first-time users or when you don't have saved blobs.
+
+### Device-Specific Notes
+
+**iPhone 6 (n61ap):** Has a cellular baseband. You **must** use a patched version of [futurerestore](https://github.com/futurerestore/futurerestore) instead of idevicerestore for the restore step, or supply a compatible baseband firmware. Without the correct baseband, cellular will not function. If you don't need cellular (e.g., using as an iPod), you can try the idevicerestore path with `--no-baseband` if supported.
+
+**iPod touch 6th gen (n102ap):** No baseband, so the restore process is essentially the same as iPad mini 4 Wi-Fi. Use idevicerestore directly.
+
+**Tick values for `sep replay`:** The empirical tick value varies by device. Start with 470000 and adjust. Use `sep observe` to find the correct window between the 2nd and 3rd `observed_value` change. Known starting points:
+- iPad mini 4: ~470000
+- iPhone 6: ~470000 (similar A8 timing, may need adjustment)
+- iPod touch 6: ~470000 (similar A8 timing, may need adjustment)
+
+## Part I Exploit SEP and Obtain ART Key (Untethered)
+1. Put your device in DFU mode, and use palera1n or checkra1n to start [this](https://github.com/feiyehua/atera1n-PongoOS) PongoOS image. You can build yourself, or use the image build by Github Action. PongoOS supports all A8 devices (iPad mini 4, iPhone 6, iPod touch 6) — make sure to use the correct build for your device.
 
 2. Type `sep shc` in pongoterm. Something like this will appear on pongoterm: 
 ```
@@ -69,7 +98,7 @@ You should choose a tick between the 2rd and the 3rd.
 If that works, `sep pwned with opcode ab` will appear in pongoterm. Now you have code execution on SEP.
 ![alt text](images/image.png)
 
-On some old device such as iOS 11.4 that I restored to, PongoOS cannot automatically detect your onboard SEPOS firmware. This is because iBEC before iOS 13 only allocates the SEP firmware buffer, but they doesn't copy the image to this area. You may need to enter the Ramdisk to extract your on board SEPOS firmware.
+On some old device such as iOS 11.4 that I restored to, PongoOS cannot automatically detect your onboard SEPOS firmware. This is because iBEC before iOS 13 only allocates the SEP firmware buffer, but they doesn't copy the image to this area. You may need to enter the Ramdisk to extract your on board SEPOS firmware. This applies to all supported A8 devices (iPad mini 4, iPhone 6, iPod touch 6).
 
 5. Send SEP payload. Type `/send /absolute/path/to/payload.bin`, then `sep load`. 
 
@@ -131,10 +160,85 @@ Create a backup for it in the case of failing.
 8. Reboot your device into DFU. Run `irecovery -q` to confirm if your APNonce is correct.
 
 ## Part III Restore Your Device
-1. Build [this](https://github.com/feiyehua/idevicerestore.git) version of idevicerestore. It's only a simple modification that prevent idevice restore from trying to reboot the device before restoring, and request new APTicket from TSS. And provide your ssh. You should have something like `src/idevicerestore --erase -T "shsh_a142d549489ffeab9a38d3fe285decdf63e6e1e9.der" /path/to/ipsw.ipsw`. 
-Note that for my iPad mini 4 Wi-Fi, there is no baseband. If you're using something with a baseband, you may need to use a patched version of futurerestore.
+
+### Devices without baseband (iPad mini 4 Wi-Fi, iPod touch 6)
+1. Build [this](https://github.com/feiyehua/idevicerestore.git) version of idevicerestore. It's only a simple modification that prevent idevice restore from trying to reboot the device before restoring, and request new APTicket from TSS. And provide your shsh. You should have something like `src/idevicerestore --erase -T "shsh_a142d549489ffeab9a38d3fe285decdf63e6e1e9.der" /path/to/ipsw.ipsw`. 
 
 2. Wait for the restore to complete and enjoy your legacy system!
+
+### Devices with baseband (iPhone 6, iPad mini 4 Cellular)
+1. Build a patched version of [futurerestore](https://github.com/futurerestore/futurerestore) that supports custom APTickets and does not request new tickets from TSS.
+
+2. You need a compatible baseband firmware. Options:
+   - Use the latest signed baseband (futurerestore can download it automatically with `--latest-baseband`)
+   - Supply a specific baseband with `--baseband /path/to/baseband.bbfw --baseband-manifest /path/to/BuildManifest.plist`
+
+3. Run futurerestore with your SHSH and IPSW:
+   ```
+   futurerestore -t shsh.shsh2 --latest-baseband /path/to/ipsw.ipsw
+   ```
+   Note: You may need to modify futurerestore to skip the TSS APTicket request (similar to the idevicerestore modification) or use a fork that supports this.
+
+4. Wait for the restore to complete and enjoy your legacy system!
+
+### Firmware paths by device
+
+| Component | iPad mini 4 (j96ap) | iPhone 6 (n61ap) | iPod touch 6 (n102ap) |
+|-----------|---------------------|-------------------|-----------------------|
+| iBEC | iBEC.ipad5.RELEASE.im4p | iBEC.n61.RELEASE.im4p | iBEC.n102.RELEASE.im4p |
+| DeviceTree | DeviceTree.j96ap.im4p | DeviceTree.n61ap.im4p | DeviceTree.n102ap.im4p |
+| SEP firmware | sep-firmware.j96.RELEASE.im4p | sep-firmware.n61.RELEASE.im4p | sep-firmware.n102.RELEASE.im4p |
+| KernelCache | kernelcache.release.ipad5 | kernelcache.release.iphone7 | kernelcache.release.ipod7 |
+
+## Blobless Boot Guide
+
+The blobless approach requires no saved SHSH blobs. It uses the Blackbird exploit on every boot to patch SEPOS manifest hash validation in-memory via the `sep blobless` PongoOS command. ART is never modified, so there is zero risk of bricking from a bad ART write.
+
+### How Blobless Boot Works
+
+Instead of patching ART with a correct manifest hash from your SHSH blob (Part II of the untethered flow), the blobless approach exploits Blackbird on every boot and uses `reload_sepi()` to decrypt and reload SEPOS into SEP memory. During reload, the `sepfw_blobless_kpf()` kernel patch function NOPs the conditional branches following manifest hash comparisons in SEPOS, so SEP accepts any firmware manifest regardless of what ART says. This is inherently tethered — the patch lives only in RAM and is lost on reboot.
+
+### Prerequisites
+- A computer with palera1n or checkra1n
+- [atera1n-PongoOS](https://github.com/feiyehua/atera1n-PongoOS) built with blobless support
+- Captured Blackbird shellcode (from `sep shc`)
+- A valid SEPOS firmware image for the target iOS version (the `sepi` from the IPSW)
+
+### Blobless Boot Steps
+
+1. **First-time setup (capture shellcode, done once per device):**
+   1. Put device in DFU mode, boot PongoOS via palera1n/checkra1n.
+   2. In pongoterm, run `sep shc` to capture the Blackbird shellcode.
+   3. Save the output bytes as a binary file (use `scripts/hex_to_bin.py`). Should be 448 bytes.
+
+2. **Restore (done once):**
+   - For devices without baseband (iPad mini 4 Wi-Fi, iPod touch 6): use idevicerestore.
+   - For devices with baseband (iPhone 6, iPad mini 4 Cellular): use futurerestore with `--latest-baseband`.
+   - The device will not boot on its own after restore. This is expected.
+
+3. **Every boot:**
+   1. Connect device to computer and enter DFU mode.
+   2. Boot PongoOS via palera1n/checkra1n.
+   3. In pongoterm, send the captured shellcode and the target SEPOS firmware:
+      ```
+      /send /path/to/captured_shellcode.bin
+      sep blobless 470000
+      ```
+      The `sep blobless` command handles the entire flow: Blackbird exploit, SEPOS decryption, manifest hash patching, and boot.
+   4. The device boots into the downgraded iOS version.
+
+### Advantages of Blobless Boot
+- **No SHSH blobs required**: Downgrade even without saved blobs
+- **No ART modification**: Zero risk of bricking from a bad ART write
+- **Reversible**: Reboot normally to return to stock firmware
+- **Safe for testing**: Try a downgrade before committing to untethered
+
+### Disadvantages of Blobless Boot
+- **Requires a computer for every boot**: If the device reboots (crash, battery dies), it needs the blobless boot process again
+- **Slower boot**: Each boot requires DFU mode and running the full exploit chain
+
+## PongoOS Fork Adaptation
+See the [PongoOS Device Support](PongoOS_Device_Support.md) file for details on the atera1n-PongoOS fork changes for multi-device support and the blobless boot implementation.
 
 ## How It Works
 I'm planning to release a writeup to explain how it works.
@@ -150,6 +254,7 @@ See the [How It Works](How_it_works.md) file.
 - **SSHRD_Script** was created by Nathan ([verygenericname](https://github.com/verygenericname)).
 - **turdus_merula**, developed by Clarity, kok3shidoll, and Mineek ([official credits](https://sep.lol/#credits)).
 - **idevicerestore**, developed by Joshua Hill, Martin Szulecki, and Nikias Bassen ([upstream authors](https://github.com/libimobiledevice/idevicerestore/blob/master/AUTHORS)).
+- **futurerestore**, for baseband-aware restores on cellular devices ([futurerestore](https://github.com/futurerestore/futurerestore)).
 - **bb33bb**, providing snippets for A8 blackbird exploit ([Gist](https://gist.github.com/bb33bb/856f56d4d4d0cad57f03a035034a9e7a)).
 - **ChatGPT**, for reverse enginnering SEPROM, SEPOS and the restore process for me.
 - **DeepSeek**, for writing exploits when ChatGPT rejects me.

@@ -3,6 +3,16 @@ SPDX-FileCopyrightText: 2026 feiyehua
 SPDX-License-Identifier: GPL-2.0-only
 -->
 # How It Works
+
+## Supported A8 Devices
+
+All A8 (T7000) devices share the same SEPROM and are vulnerable to Blackbird. The exploit and payload work identically across:
+- **iPad mini 4** (j96ap / j97ap) — iPad5,1 / iPad5,2
+- **iPhone 6** (n61ap) — iPhone7,2
+- **iPod touch 6th generation** (n102ap) — iPod7,1
+
+The SEPROM is identical across all A8 devices, so the Blackbird exploit, SEP payload, and ART key derivation are device-agnostic. Device-specific differences only appear in firmware paths (DeviceTree, kernelcache, SEP firmware naming) and baseband handling during restore.
+
 ## How SEPROM Boots SEPOS
 TBD
 
@@ -95,4 +105,71 @@ The Key_ART is derived from SEP, and never send to the exterior world.
 However, after getting code execution in SEP, we can get this Key_ART, get a HMAC that SEP would accept and therefore craft whatever ART you want!
 
 In that way, your SEP will happily boot your legacy SEPOS.
+
+## Blobless Boot: In-Memory SEPOS Manifest Patching
+
+The untethered approach modifies ART in NVRAM permanently, which carries a risk of bricking if the ART is malformed and requires saved SHSH blobs. The blobless approach avoids both.
+
+### How It Works
+
+The `sep blobless` PongoOS command handles the entire blobless boot flow:
+
+1. **checkm8 → PongoOS**: The device enters DFU, and checkm8 gives AP code execution. PongoOS loads as the boot environment.
+
+2. **Blackbird exploit**: The `sep blobless` command replays captured shellcode to exploit the shared-memory race condition and gain code execution inside SEP. This is the same Blackbird exploit as the untethered path.
+
+3. **SEPOS decryption and reload**: Using `reload_sepi()`, the command decrypts the SEPOS firmware via the SEP's AES engine (using the GID-derived KBAG key) and reloads it into SEP memory.
+
+4. **Manifest hash patch (`sepfw_blobless_kpf`)**: Before the decrypted SEPOS is written back to SEP memory, the blobless kernel patch function scans the SEPOS .text for CMP+BNE instruction sequences that implement the manifest hash comparison (`matches(ART manifest_hash, IM4M manifest_hash)`). It NOPs the conditional branches (BNE → NOP), so the check always falls through as "match". This is in addition to the standard BPR check patch from `sepfw_kpf()`.
+
+5. **Boot**: With the patched SEPOS loaded, `sep_blackbird_boot()` triggers the SEP boot sequence. SEP accepts any manifest regardless of ART state, and the device boots into the downgraded iOS.
+
+### Why No Blobs Are Needed
+
+In the untethered flow, you need SHSH blobs because you must write the correct manifest hash and restore nonce into ART, so SEPOS can verify the ticket on a cold boot. In blobless mode, we bypass the manifest hash check entirely — SEPOS never compares ART's manifest hash against the IM4M, so it doesn't matter what ART says. The restore nonce check is similarly bypassed because SEPOS loads in a "fresh" state through Blackbird rather than through SEPROM's normal boot path.
+
+### Why This Is Safer
+
+- The ART in NVRAM is never touched. A normal DFU restore to the latest signed firmware always works.
+- The exploit only affects the current boot session. A normal reboot returns the device to its stock state.
+- No HMAC key extraction or ART crafting is needed.
+
+### Tradeoff
+
+The device cannot boot on its own. Every power cycle requires the full checkm8 → PongoOS → Blackbird → patch chain, which means a computer must be connected.
+
+### Technical Details: `sepfw_blobless_kpf`
+
+The kernel patcher scans SEPOS ARM32 instructions for this pattern:
+```
+CMP Rn, Rm           ; (cccc 0001 0101 xxxx 0000 xxxx 0000 xxxx)
+BNE <error_path>     ; (0001 1010 xxxx xxxx xxxx xxxx xxxx xxxx)
+```
+And replaces the BNE with a NOP (`MOV R0, R0` = `0xE1A00000`), so execution always continues as if the comparison matched.
+
+This catches the manifest hash comparison in SEPOS, as well as similar integrity checks. The patch is applied to the decrypted SEPOS binary before it is written back into SEP memory.
+
+### Device Compatibility
+
+The blobless boot is device-agnostic across all A8 devices. The SEPROM and SEPOS memory layout are identical across the A8 family. The only per-device difference is the boot chain firmware (iBEC, DeviceTree, kernelcache), which PongoOS and palera1n/checkra1n handle automatically.
+
+For **iPhone 6** (n61ap): The baseband processor boots independently and is unaffected by the blobless boot.
+
+## PongoOS Fork: Device Support
+
+The [atera1n-PongoOS](https://github.com/feiyehua/atera1n-PongoOS) fork extends PongoOS with SEP exploit commands. All commands are device-agnostic across all A8 (T7000) devices:
+
+- `sep shc` — Capture Blackbird shellcode
+- `sep observe` — Observe SEPROM boot behavior
+- `sep replay` — Replay captured shellcode for Blackbird exploit
+- `sep load` — Load a binary payload into pwned SEP
+- `sep blobless` — **Blobless boot: Blackbird exploit + SEPOS manifest patch + boot (no SHSH blobs needed)**
+- `sep jump` / `sep peek` / `sep poke` — Low-level SEP interaction
+- `sep boot` — Boot a pwned SEPOS image
+- `sep encrypt` / `sep decrypt` — KBAG operations via SEP AES engine
+
+The fork handles:
+- **Device detection**: PongoOS identifies the device via `Running on: Apple A8 (T7000)`. All SEP commands check `socnum == 0x7000`.
+- **Blobless boot**: The `sep blobless` command combines exploit + load + patch + boot into a single operation, using `sepfw_blobless_kpf()` to patch manifest validation.
+- **SEPOS firmware detection**: On older iOS versions (pre-iOS 13), the iBEC doesn't copy the SEP firmware to the expected buffer. The fork's ramdisk-based extraction path handles this for all A8 devices.
 
