@@ -8,7 +8,7 @@ SPDX-License-Identifier: GPL-2.0-only
 This can be a little scary, because the screen flashes and dims slowly. But this is fixable.
 Thanks [@tihmstar](https://x.com/tihmstar/status/1943359951750991932?s=46) for providing a way to fix this.
 
-This procedure works on all supported A8 devices (iPad mini 4, iPhone 6, iPod touch 6).
+This procedure works on all supported A8/A8X devices (iPad mini 4, iPhone 6, iPhone 6 Plus, iPod touch 6, iPad Air 2).
 
 0. If you have backed up your ART, restore it. Otherwise, follow the instructions bellow.
 1. Enter DFU mode, and obtain a APTicket for the latest signing firmware. Personalize the RestoreSEP with the APTicket.
@@ -33,14 +33,14 @@ restore nonce absent
 ```
 4. Restore your device again.
 
-## SEP panics during `sep replay` on iPhone 6 or iPod touch 6
-The tick value for `sep replay` may differ slightly between devices even though they all use A8. If 470000 doesn't work:
+## SEP panics during `sep replay` on iPhone 6, 6 Plus, iPod touch 6, or iPad Air 2
+The tick value for `sep replay` may differ slightly between devices even though they all use A8/A8X. If 470000 doesn't work:
 1. Run `sep observe` first to see the tick values on your specific device.
 2. Choose a tick between the 2nd and 3rd `observed_value` change.
 3. Try values in increments of 10000 around the midpoint of that range.
 
-## iPhone 6: Restore fails with baseband error
-iPhone 6 has a cellular baseband that must be handled during restore:
+## iPhone 6 / 6 Plus / iPad Air 2 Cellular: Restore fails with baseband error
+iPhone 6, iPhone 6 Plus, and iPad Air 2 (Cellular) have a cellular baseband that must be handled during restore:
 - Use futurerestore with `--latest-baseband` to let it fetch the currently signed baseband.
 - If you need a specific baseband version, supply it with `--baseband` and `--baseband-manifest`.
 - If cellular is not needed, check if your restore tool supports `--no-baseband`.
@@ -70,4 +70,14 @@ The Blackbird race failed. This is timing-sensitive:
 1. Try different tick values (start with 470000, adjust by 10000).
 2. Use `sep observe` to find the correct timing window.
 3. Retry — the race can fail intermittently.
+
+## iPad Air 2 (A8X): Shellcode commands fail or SEP doesn't respond
+The SEP-side shellcode payloads (`sep-pwn-smoke.S`, `sep-blobless-boot.S`, `sep-artk-derive.S`) use T7000 (A8) mailbox virtual addresses. On A8X (T7001), the SEP-internal mailbox VA may differ:
+1. Run `sep observe` first to verify that SEPROM boot is detected correctly.
+2. If `sep shc` captures shellcode but the shellcode doesn't respond via mailbox, the SEP-internal mailbox VA likely differs on T7001.
+3. Use `sep peek` to scan the SEP MMIO region and find the correct mailbox VA for your device.
+4. Rebuild the shellcode with updated `MAILBOX_VA` / `SEP_MAILBOX_BASE` constants.
+
+## iPad Air 2 (A8X): "blobless: running on A8X (T7001)" message
+This informational message confirms the driver detected an A8X chip. The AP-side mailbox offset (0x4000) is handled automatically. If the blobless boot fails after this message, the issue is likely the SEP-side shellcode mailbox VA — see the entry above.
 

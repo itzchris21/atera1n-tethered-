@@ -8,14 +8,17 @@ And, everything before overwriting ART should be read only and won't compromise 
 
 ## Supported Devices
 
-All A8 (T7000) devices with checkm8 support:
+All A8 (T7000) and A8X (T7001) devices with checkm8 support:
 
 | Device | Identifier | Board | SoC | Baseband | Notes |
 |--------|-----------|-------|-----|----------|-------|
 | iPad mini 4 (Wi-Fi) | iPad5,1 | j96ap | A8 (T7000) | No | Tested and confirmed working |
 | iPad mini 4 (Cellular) | iPad5,2 | j97ap | A8 (T7000) | Yes | Needs futurerestore for baseband |
 | iPhone 6 | iPhone7,2 | n61ap | A8 (T7000) | Yes | Needs futurerestore for baseband |
+| iPhone 6 Plus | iPhone7,1 | n56ap | A8 (T7000) | Yes | Needs futurerestore for baseband |
 | iPod touch (6th gen) | iPod7,1 | n102ap | A8 (T7000) | No | No baseband, similar to iPad mini 4 Wi-Fi |
+| iPad Air 2 (Wi-Fi) | iPad5,3 | j81ap | A8X (T7001) | No | A8X — see notes below |
+| iPad Air 2 (Cellular) | iPad5,4 | j82ap | A8X (T7001) | Yes | A8X — needs futurerestore for baseband |
 
 ### Untethered vs Blobless
 
@@ -28,12 +31,17 @@ This project supports two modes:
 
 **iPhone 6 (n61ap):** Has a cellular baseband. You **must** use a patched version of [futurerestore](https://github.com/futurerestore/futurerestore) instead of idevicerestore for the restore step, or supply a compatible baseband firmware. Without the correct baseband, cellular will not function. If you don't need cellular (e.g., using as an iPod), you can try the idevicerestore path with `--no-baseband` if supported.
 
+**iPhone 6 Plus (n56ap):** Same A8 (T7000) SoC as iPhone 6. Has cellular baseband — same futurerestore requirements as iPhone 6.
+
 **iPod touch 6th gen (n102ap):** No baseband, so the restore process is essentially the same as iPad mini 4 Wi-Fi. Use idevicerestore directly.
+
+**iPad Air 2 (j81ap/j82ap):** Uses A8X (T7001) — a different chip from A8 but shares the same 32-bit SEP architecture. The AP-side mailbox offset differs (0x4000 vs 0x1000 on A8), which the driver handles automatically. The SEP-side shellcode payloads use T7000 mailbox virtual addresses — these may need adjustment for T7001. Use `sep observe` on the device first to verify correct behavior. The j82ap (Cellular) variant needs futurerestore for baseband.
 
 **Tick values for `sep replay`:** The empirical tick value varies by device. Start with 470000 and adjust. Use `sep observe` to find the correct window between the 2nd and 3rd `observed_value` change. Known starting points:
 - iPad mini 4: ~470000
-- iPhone 6: ~470000 (similar A8 timing, may need adjustment)
+- iPhone 6 / 6 Plus: ~470000 (similar A8 timing, may need adjustment)
 - iPod touch 6: ~470000 (similar A8 timing, may need adjustment)
+- iPad Air 2: ~470000 (A8X timing may differ — use `sep observe`)
 
 ## Part I Exploit SEP and Obtain ART Key (Untethered)
 1. Put your device in DFU mode, and use palera1n or checkra1n to start [this](https://github.com/feiyehua/atera1n-PongoOS) PongoOS image. You can build yourself, or use the image build by Github Action. PongoOS supports all A8 devices (iPad mini 4, iPhone 6, iPod touch 6) — make sure to use the correct build for your device.
@@ -183,12 +191,12 @@ Create a backup for it in the case of failing.
 
 ### Firmware paths by device
 
-| Component | iPad mini 4 (j96ap) | iPhone 6 (n61ap) | iPod touch 6 (n102ap) |
-|-----------|---------------------|-------------------|-----------------------|
-| iBEC | iBEC.ipad5.RELEASE.im4p | iBEC.n61.RELEASE.im4p | iBEC.n102.RELEASE.im4p |
-| DeviceTree | DeviceTree.j96ap.im4p | DeviceTree.n61ap.im4p | DeviceTree.n102ap.im4p |
-| SEP firmware | sep-firmware.j96.RELEASE.im4p | sep-firmware.n61.RELEASE.im4p | sep-firmware.n102.RELEASE.im4p |
-| KernelCache | kernelcache.release.ipad5 | kernelcache.release.iphone7 | kernelcache.release.ipod7 |
+| Component | iPad mini 4 (j96ap) | iPhone 6 (n61ap) | iPhone 6 Plus (n56ap) | iPod touch 6 (n102ap) | iPad Air 2 Wi-Fi (j81ap) | iPad Air 2 Cell (j82ap) |
+|-----------|---------------------|-------------------|-----------------------|-----------------------|--------------------------|--------------------------|
+| iBEC | iBEC.ipad5.RELEASE.im4p | iBEC.n61.RELEASE.im4p | iBEC.n56.RELEASE.im4p | iBEC.n102.RELEASE.im4p | iBEC.j81.RELEASE.im4p | iBEC.j82.RELEASE.im4p |
+| DeviceTree | DeviceTree.j96ap.im4p | DeviceTree.n61ap.im4p | DeviceTree.n56ap.im4p | DeviceTree.n102ap.im4p | DeviceTree.j81ap.im4p | DeviceTree.j82ap.im4p |
+| SEP firmware | sep-firmware.j96.RELEASE.im4p | sep-firmware.n61.RELEASE.im4p | sep-firmware.n56.RELEASE.im4p | sep-firmware.n102.RELEASE.im4p | sep-firmware.j81.RELEASE.im4p | sep-firmware.j82.RELEASE.im4p |
+| KernelCache | kernelcache.release.ipad5 | kernelcache.release.iphone7 | kernelcache.release.iphone7 | kernelcache.release.ipod7 | kernelcache.release.ipad5 | kernelcache.release.ipad5 |
 
 ## Blobless Boot Guide
 
@@ -212,8 +220,8 @@ Instead of patching ART with a correct manifest hash from your SHSH blob (Part I
    3. Save the output bytes as a binary file (use `scripts/hex_to_bin.py`). Should be 448 bytes.
 
 2. **Restore (done once):**
-   - For devices without baseband (iPad mini 4 Wi-Fi, iPod touch 6): use idevicerestore.
-   - For devices with baseband (iPhone 6, iPad mini 4 Cellular): use futurerestore with `--latest-baseband`.
+   - For devices without baseband (iPad mini 4 Wi-Fi, iPod touch 6, iPad Air 2 Wi-Fi): use idevicerestore.
+   - For devices with baseband (iPhone 6, iPhone 6 Plus, iPad mini 4 Cellular, iPad Air 2 Cellular): use futurerestore with `--latest-baseband`.
    - The device will not boot on its own after restore. This is expected.
 
 3. **Every boot:**

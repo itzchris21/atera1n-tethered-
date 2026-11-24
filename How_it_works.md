@@ -4,14 +4,20 @@ SPDX-License-Identifier: GPL-2.0-only
 -->
 # How It Works
 
-## Supported A8 Devices
+## Supported Devices
 
-All A8 (T7000) devices share the same SEPROM and are vulnerable to Blackbird. The exploit and payload work identically across:
+All A8 (T7000) and A8X (T7001) devices share the same 32-bit SEP architecture and are vulnerable to Blackbird:
+
+**A8 (T7000):**
 - **iPad mini 4** (j96ap / j97ap) — iPad5,1 / iPad5,2
 - **iPhone 6** (n61ap) — iPhone7,2
+- **iPhone 6 Plus** (n56ap) — iPhone7,1
 - **iPod touch 6th generation** (n102ap) — iPod7,1
 
-The SEPROM is identical across all A8 devices, so the Blackbird exploit, SEP payload, and ART key derivation are device-agnostic. Device-specific differences only appear in firmware paths (DeviceTree, kernelcache, SEP firmware naming) and baseband handling during restore.
+**A8X (T7001):**
+- **iPad Air 2** (j81ap / j82ap) — iPad5,3 / iPad5,4
+
+The SEPROM is identical across all A8 devices, so the Blackbird exploit, SEP payload, and ART key derivation are device-agnostic. A8X (T7001) shares the same 32-bit SEP architecture but uses a different AP-side mailbox offset (0x4000 vs 0x1000), which the driver handles automatically. The SEP-internal mailbox virtual addresses used by shellcode payloads are from the T7000 SEPROM page tables and may need verification on A8X hardware. Device-specific differences otherwise only appear in firmware paths (DeviceTree, kernelcache, SEP firmware naming) and baseband handling during restore.
 
 ## How SEPROM Boots SEPOS
 TBD
@@ -151,13 +157,15 @@ This catches the manifest hash comparison in SEPOS, as well as similar integrity
 
 ### Device Compatibility
 
-The blobless boot is device-agnostic across all A8 devices. The SEPROM and SEPOS memory layout are identical across the A8 family. The only per-device difference is the boot chain firmware (iBEC, DeviceTree, kernelcache), which PongoOS and palera1n/checkra1n handle automatically.
+The blobless boot works across all A8 and A8X devices. The SEPROM and SEPOS memory layout are identical across the A8 family. A8X (T7001) shares the same 32-bit SEP architecture; the driver handles the different AP-side mailbox offset automatically. The only per-device difference is the boot chain firmware (iBEC, DeviceTree, kernelcache), which PongoOS and palera1n/checkra1n handle automatically.
 
-For **iPhone 6** (n61ap): The baseband processor boots independently and is unaffected by the blobless boot.
+For **iPhone 6 / 6 Plus** (n61ap / n56ap): The baseband processor boots independently and is unaffected by the blobless boot.
+
+For **iPad Air 2** (j81ap / j82ap): Uses A8X (T7001). The SEP-side shellcode payloads use T7000 mailbox virtual addresses. Verify correct behavior with `sep observe` before running the full exploit.
 
 ## PongoOS Fork: Device Support
 
-The [atera1n-PongoOS](https://github.com/feiyehua/atera1n-PongoOS) fork extends PongoOS with SEP exploit commands. All commands are device-agnostic across all A8 (T7000) devices:
+The [atera1n-PongoOS](https://github.com/feiyehua/atera1n-PongoOS) fork extends PongoOS with SEP exploit commands. All commands work across A8 (T7000) and A8X (T7001) devices:
 
 - `sep shc` — Capture Blackbird shellcode
 - `sep observe` — Observe SEPROM boot behavior
@@ -169,7 +177,7 @@ The [atera1n-PongoOS](https://github.com/feiyehua/atera1n-PongoOS) fork extends 
 - `sep encrypt` / `sep decrypt` — KBAG operations via SEP AES engine
 
 The fork handles:
-- **Device detection**: PongoOS identifies the device via `Running on: Apple A8 (T7000)`. All SEP commands check `socnum == 0x7000`.
+- **Device detection**: PongoOS identifies the device via `Running on: Apple A8 (T7000)` or `Apple A8X (T7001)`. SEP commands accept both `socnum == 0x7000` and `socnum == 0x7001`.
 - **Blobless boot**: The `sep blobless` command combines exploit + load + patch + boot into a single operation, using `sepfw_blobless_kpf()` to patch manifest validation.
 - **SEPOS firmware detection**: On older iOS versions (pre-iOS 13), the iBEC doesn't copy the SEP firmware to the expected buffer. The fork's ramdisk-based extraction path handles this for all A8 devices.
 
