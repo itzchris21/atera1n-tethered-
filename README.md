@@ -43,6 +43,10 @@ This project supports two modes:
 - iPod touch 6: ~470000 (similar A8 timing, may need adjustment)
 - iPad Air 2: ~470000 (A8X timing may differ — use `sep observe`)
 
+## Full Downgrade Guide
+
+For a complete step-by-step walkthrough of both the blobless and untethered downgrade paths, see the **[Downgrade Guide](Downgrade_Guide.md)**.
+
 ## Part I Exploit SEP and Obtain ART Key (Untethered)
 1. Put your device in DFU mode, and use palera1n or checkra1n to start [this](https://github.com/feiyehua/atera1n-PongoOS) PongoOS image. You can build yourself, or use the image build by Github Action. PongoOS supports all A8 devices (iPad mini 4, iPhone 6, iPod touch 6) — make sure to use the correct build for your device.
 
