@@ -1,1 +1,4 @@
 .DS_Store
+shellcode.bin
+shellcode_capture.txt
+*.shsh2
